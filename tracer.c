@@ -32,7 +32,7 @@ int read_remote_mem(pid_t pid, void *addr, void *buf, size_t size)
 		errno = 0;
 		*((long *)buf + s/8) = ptrace(PTRACE_PEEKDATA, pid, addr + s, NULL);
 		if (errno != 0) {
-			fprintf(stderr, "ptrace PEEK_DATA failed %s\n", strerror(errno));
+			//fprintf(stderr, "ptrace PEEK_DATA failed %s\n", strerror(errno));
 			return -1;
 		}
 	}
@@ -77,10 +77,7 @@ int my_lua_getstack(lua_State *L, pid_t pid) {
 	char sourceBuf[128];
 	int line;
 	 
-	printf("L->ci = %p\n", L->ci);
-	printf("L->base_ci %p\n", L->base_ci);
 	read_remote_mem(pid, L->ci, &ci, sizeof(ci));
-	hexdump(&ci, sizeof(ci));
 	for ( ; ci.previous != NULL ; read_remote_mem(pid, ci.previous, &ci, sizeof(ci))) {
 
 		// get the TValue
