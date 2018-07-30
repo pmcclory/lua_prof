@@ -83,27 +83,25 @@ int my_lua_getstack(lua_State *L, pid_t pid) {
 	hexdump(&ci, sizeof(ci));
 	for ( ; ci.previous != NULL ; read_remote_mem(pid, ci.previous, &ci, sizeof(ci))) {
 
-	// get the TValue
-	read_remote_mem(pid, ci.func, &tval, sizeof(tval));
-	memset(&closure, 0xff, sizeof(closure));
-	read_remote_mem(pid, tval.value_.gc, &closure, sizeof(closure));
+		// get the TValue
+		read_remote_mem(pid, ci.func, &tval, sizeof(tval));
+		memset(&closure, 0xff, sizeof(closure));
+		read_remote_mem(pid, tval.value_.gc, &closure, sizeof(closure));
 
-	memset(&proto, 0xff, sizeof(proto));
-    if (read_remote_mem(pid, closure.p, &proto, sizeof(proto))) {
-		continue;
-	}
+		memset(&proto, 0xff, sizeof(proto));
+		if (read_remote_mem(pid, closure.p, &proto, sizeof(proto))) {
+			continue;
+		}
 
-	memset(sourceBuf, 0xff, sizeof(sourceBuf));
-	//printf("proto->source: %p\n", proto.source);
-	if (read_remote_mem(pid, ((char *)proto.source) + sizeof(TString), &sourceBuf, sizeof(sourceBuf))) {
-		continue;
-	}
+		memset(sourceBuf, 0xff, sizeof(sourceBuf));
+		if (read_remote_mem(pid, ((char *)proto.source) + sizeof(TString), &sourceBuf, sizeof(sourceBuf))) {
+			continue;
+		}
 
-	if (getLineNumber(pid, &ci, &proto, &line)) {
-		line = -1;
-	}
-	printf("%s:%d\n", sourceBuf, line);
-
+		if (getLineNumber(pid, &ci, &proto, &line)) {
+			line = -1;
+		}
+		printf("%s:%d\n", sourceBuf, line);
 	}
 	return status;
 }
@@ -123,12 +121,10 @@ int main(int argc, char **argv)
 	long addr = strtol(argv[2], NULL, 16);
 	lua_State state;
 	memset(&state, 5, sizeof(state));
-	//hexdump(&state, sizeof(state));
 	if (read_remote_mem(pid, (void *)addr, &state, sizeof(state)) != 0) {
 		fprintf(stderr, "read_remote mem failed :( (%s)\n", strerror(errno));
 		return -1;
 	}
-	//hexdump(&state, sizeof(state));
 	my_lua_getstack(&state, pid);
 	ptrace(PTRACE_DETACH, pid);
 	return 0;
