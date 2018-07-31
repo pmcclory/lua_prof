@@ -11,7 +11,7 @@ struct remote_proc *rproc_create(pid_t pid)
 	struct remote_proc *p;
 	p = calloc(1, sizeof(*p));
 	if (!p) {
-		perror("alloc failed\n");		
+		perror("alloc failed\n");
 	}
 	p->pid = pid;
 	return p;
@@ -55,3 +55,5 @@ int rproc_read_mem(struct remote_proc *p,
 	}
 	return 0;
 }
+
+/* vim: set noai ts=4 sw=4: */

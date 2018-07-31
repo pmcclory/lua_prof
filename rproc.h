@@ -19,3 +19,5 @@ int rproc_read_mem(struct remote_proc *p,
 				   size_t size);
 
 #endif
+
+/* vim: set noai ts=4 sw=4: */

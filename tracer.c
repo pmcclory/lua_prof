@@ -49,14 +49,14 @@ int my_lua_getstack(lua_State *L, struct remote_proc *rproc) {
 	struct Proto proto;
 	char sourceBuf[128];
 	int line;
-	
+
 	if (rproc_read_mem(rproc, L->ci, &ci, sizeof(ci))) {
 		fprintf(stderr, "failed to locate call info\n");
-		return -1;		
+		return -1;
 	}
 	for ( ; ci.previous != NULL ;
 		rproc_read_mem(rproc, ci.previous, &ci, sizeof(ci))) {
-	
+
 		// get the TValue
 		if (rproc_read_mem(rproc, ci.func, &tval, sizeof(tval))) {
 			printf("???\n");
@@ -104,10 +104,12 @@ int main(int argc, char **argv)
 	lua_State state;
 	memset(&state, 5, sizeof(state));
 	if (rproc_read_mem(rproc, (void *)addr, &state, sizeof(state))) {
-		exit(-1);	
+		exit(-1);
 	}
 
 	my_lua_getstack(&state, rproc);
 	rproc_resume(rproc);
 	return 0;
 }
+
+/* vim: set noai ts=4 sw=4: */
