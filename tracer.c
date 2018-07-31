@@ -12,32 +12,7 @@
 #include <errno.h>
 #include <unistd.h>
 
-void hexdump(void *addr, size_t size)
-{
-	for (int i = 0 ; i < size ; i++) {
-		fprintf(stdout, " %02x,", *(((char *)addr) + i) & 0xff);
-		if (i > 0 && (i + 1) % 8 == 0) {
-			fprintf(stdout, "\n");
-		}
-	}
-	fprintf(stdout, "\n");
-}
-
-// hardcoded for x86_64 right now
-int read_remote_mem(pid_t pid, void *addr, void *buf, size_t size)
-{
-	//fprintf(stdout, "attempting to read %d bytes from %d at %p\n", size, pid, addr);
-	//fprintf(stdout, "writing to %p\n", buf);
-	for (size_t s = 0 ; s < size ; s+=8) {
-		errno = 0;
-		*((long *)buf + s/8) = ptrace(PTRACE_PEEKDATA, pid, addr + s, NULL);
-		if (errno != 0) {
-			//fprintf(stderr, "ptrace PEEK_DATA failed %s\n", strerror(errno));
-			return -1;
-		}
-	}
-	return 0;
-}
+#include "rproc.h"
 
 /**
  * The CallInfo contains a pointer to the current PC - savedpc
@@ -47,7 +22,7 @@ int read_remote_mem(pid_t pid, void *addr, void *buf, size_t size)
  *
  * See ldebug.c/.h
  */
-int getLineNumber(pid_t pid, CallInfo *ci, struct Proto *p, int *line)
+int getLineNumber(struct remote_proc *rproc, CallInfo *ci, struct Proto *p, int *line)
 {
 	void *scratch = NULL; // use a pointer b/c we can't read only an int w/ ptrace - need to read a word
 	// not sure what the -1 is for, but pcRel does this, and
@@ -55,7 +30,7 @@ int getLineNumber(pid_t pid, CallInfo *ci, struct Proto *p, int *line)
 	int index = ci->u.l.savedpc - p->code - 1;
 	// read the appropriate line info
 	int *target = p->lineinfo + index;
-	if (read_remote_mem(pid, target, &scratch, sizeof(scratch))) {
+	if (rproc_read_mem(rproc, target, &scratch, sizeof(scratch))) {
 		return -1;
 	}
 	*line = (int) scratch;
@@ -66,36 +41,46 @@ int getLineNumber(pid_t pid, CallInfo *ci, struct Proto *p, int *line)
 /*
  * reimplementation of lua_getstack using ptrace on a remote process
  */
-int my_lua_getstack(lua_State *L, pid_t pid) {
+int my_lua_getstack(lua_State *L, struct remote_proc *rproc) {
 	int status = 0;
 	CallInfo ci;
-	char *funcname = NULL;
 	TValue tval;
 	struct LClosure closure;
 	struct Proto proto;
-	TString sourceStr;
 	char sourceBuf[128];
 	int line;
-	 
-	read_remote_mem(pid, L->ci, &ci, sizeof(ci));
-	for ( ; ci.previous != NULL ; read_remote_mem(pid, ci.previous, &ci, sizeof(ci))) {
-
+	
+	if (rproc_read_mem(rproc, L->ci, &ci, sizeof(ci))) {
+		fprintf(stderr, "failed to locate call info\n");
+		return -1;		
+	}
+	for ( ; ci.previous != NULL ;
+		rproc_read_mem(rproc, ci.previous, &ci, sizeof(ci))) {
+	
 		// get the TValue
-		read_remote_mem(pid, ci.func, &tval, sizeof(tval));
+		if (rproc_read_mem(rproc, ci.func, &tval, sizeof(tval))) {
+			printf("???\n");
+			continue;
+		}
 		memset(&closure, 0xff, sizeof(closure));
-		read_remote_mem(pid, tval.value_.gc, &closure, sizeof(closure));
+		if (rproc_read_mem(rproc, tval.value_.gc, &closure, sizeof(closure))) {
+			printf("???\n");
+			continue;
+		}
 
 		memset(&proto, 0xff, sizeof(proto));
-		if (read_remote_mem(pid, closure.p, &proto, sizeof(proto))) {
+		if (rproc_read_mem(rproc, closure.p, &proto, sizeof(proto))) {
+			printf("???\n");
 			continue;
 		}
 
 		memset(sourceBuf, 0xff, sizeof(sourceBuf));
-		if (read_remote_mem(pid, ((char *)proto.source) + sizeof(TString), &sourceBuf, sizeof(sourceBuf))) {
+		if (rproc_read_mem(rproc, ((char *)proto.source) + sizeof(TString), &sourceBuf, sizeof(sourceBuf))) {
+			printf("???\n");
 			continue;
 		}
 
-		if (getLineNumber(pid, &ci, &proto, &line)) {
+		if (getLineNumber(rproc, &ci, &proto, &line)) {
 			line = -1;
 		}
 		printf("%s:%d\n", sourceBuf, line);
@@ -106,23 +91,23 @@ int my_lua_getstack(lua_State *L, pid_t pid) {
 int main(int argc, char **argv)
 {
 	pid_t pid = atoi(argv[1]);
-	//attach
-	if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) == -1) {
-		fprintf(stderr, "ptrace attach failed\n");
-		return -1;
+	long addr = strtol(argv[2], NULL, 16);
+	struct remote_proc *rproc = rproc_create(pid);
+	if (!rproc) {
+		exit(-1);
 	}
 
-	// wait for the proc to actually stop
-	waitpid(pid, NULL, __WALL);
+	if (rproc_pause(rproc)) {
+		exit(-1);
+	}
 
-	long addr = strtol(argv[2], NULL, 16);
 	lua_State state;
 	memset(&state, 5, sizeof(state));
-	if (read_remote_mem(pid, (void *)addr, &state, sizeof(state)) != 0) {
-		fprintf(stderr, "read_remote mem failed :( (%s)\n", strerror(errno));
-		return -1;
+	if (rproc_read_mem(rproc, (void *)addr, &state, sizeof(state))) {
+		exit(-1);	
 	}
-	my_lua_getstack(&state, pid);
-	ptrace(PTRACE_DETACH, pid);
+
+	my_lua_getstack(&state, rproc);
+	rproc_resume(rproc);
 	return 0;
 }
